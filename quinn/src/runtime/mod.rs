@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use udp::{RecvMeta, Transmit};
+use udp::{RecvMeta, Transmit, is_msg_size_err};
 
 use crate::Instant;
 
@@ -191,6 +191,13 @@ where
                 // registers us for a wakeup, or the send succeeds if this really was just a
                 // transient failure.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                // EMSGSIZE is expected for MTU probes. The endpoint cannot use
+                // unauthenticated ICMP packet-too-big messages for PMTU state,
+                // so treat this as a dropped probe and let discovery recover.
+                Err(e) if is_msg_size_err(&e) => {
+                    log_sendmsg_error(this.last_send_error, &e, transmit);
+                    return Poll::Ready(Ok(()));
+                }
                 Err(e) => {
                     log_sendmsg_error(this.last_send_error, &e, transmit);
                     return Poll::Ready(Err(e));
