@@ -193,7 +193,7 @@ where
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                 Err(e) => {
                     log_sendmsg_error(this.last_send_error, &e, transmit);
-                    return Poll::Ready(Ok(()));
+                    return Poll::Ready(Err(e));
                 }
                 Ok(()) => return Poll::Ready(Ok(())),
             }
@@ -294,7 +294,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn non_would_block_send_errors_are_logged_and_ignored() {
+    fn non_would_block_send_errors_are_logged_and_propagated() {
         let mut sender = Box::pin(UdpSenderHelper::new(TestSocket, writable));
         let transmit = Transmit {
             destination: SocketAddr::from(([127, 0, 0, 1], 4433)),
@@ -307,7 +307,10 @@ mod tests {
 
         let result = sender.as_mut().poll_send(&transmit, &mut cx);
 
-        assert!(matches!(result, Poll::Ready(Ok(()))));
+        assert!(matches!(
+            result,
+            Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::PermissionDenied
+        ));
         assert!(sender.last_send_error.is_some());
     }
 
