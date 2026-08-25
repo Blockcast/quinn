@@ -15,7 +15,7 @@ use libc::{c_int, c_uint};
 use windows_sys::Win32::Networking::WinSock;
 
 use crate::{
-    EcnCodepoint, IO_ERROR_LOG_INTERVAL, RecvMeta, Transmit, UdpSockRef,
+    EcnCodepoint, IO_ERROR_LOG_INTERVAL, RecvMeta, Transmit, TransportError, UdpSockRef,
     cmsg::{self, CMsgHdr},
     log::debug,
     log_sendmsg_error,
@@ -330,6 +330,25 @@ impl UdpSocketState {
             timestamp: None,
         };
         Ok(1)
+    }
+
+    /// Enables asynchronous transport-layer error reception for this socket.
+    ///
+    /// Windows does not expose the Linux/Android socket error queue used by
+    /// [`UdpSocketState::recv_transport_error`], so this is a no-op.
+    pub fn enable_transport_errors(&self, _socket: UdpSockRef<'_>) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Receives one pending asynchronous transport-layer error from this socket.
+    ///
+    /// Windows does not expose the Linux/Android socket error queue, so this
+    /// always returns `None`.
+    pub fn recv_transport_error(
+        &self,
+        _socket: UdpSockRef<'_>,
+    ) -> io::Result<Option<TransportError>> {
+        Ok(None)
     }
 
     /// The maximum amount of segments which can be transmitted if a platform

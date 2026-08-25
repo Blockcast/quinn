@@ -39,6 +39,22 @@ fn basic() {
     );
 }
 
+/// Keep the transport-error opt-in API available on every socket implementation
+/// that exposes a borrowed std socket. Linux/Android may return a queued error,
+/// while Windows and fallback targets intentionally return `None`.
+#[cfg(any(unix, windows))]
+#[test]
+fn transport_error_api_is_cross_platform() {
+    let sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let state = UdpSocketState::new((&sock).into()).unwrap();
+    state
+        .enable_transport_errors((&sock).into())
+        .expect("transport-error opt-in API unavailable");
+    let _ = state
+        .recv_transport_error((&sock).into())
+        .expect("transport-error receive API unavailable");
+}
+
 #[test]
 fn basic_src_ip() {
     let send = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0))
