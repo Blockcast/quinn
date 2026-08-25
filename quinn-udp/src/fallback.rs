@@ -4,7 +4,9 @@ use std::{
     time::Instant,
 };
 
-use super::{IO_ERROR_LOG_INTERVAL, RecvMeta, Transmit, UdpSockRef, log_sendmsg_error};
+use super::{
+    IO_ERROR_LOG_INTERVAL, RecvMeta, Transmit, TransportError, UdpSockRef, log_sendmsg_error,
+};
 
 /// Fallback UDP socket interface that stubs out all special functionality
 ///
@@ -35,6 +37,7 @@ impl UdpSocketState {
     ///
     /// If you would like to handle these errors yourself, use [`UdpSocketState::try_send`]
     /// instead.
+    #[deprecated(note = "silences I/O errors; use `UdpSocketState::try_send() instead")]
     pub fn send(&self, socket: UdpSockRef<'_>, transmit: &Transmit<'_>) -> io::Result<()> {
         match send(socket, transmit) {
             Ok(()) => Ok(()),
@@ -75,6 +78,25 @@ impl UdpSocketState {
             interface_index: None,
         };
         Ok(1)
+    }
+
+    /// Enables asynchronous transport-layer error reception for this socket.
+    ///
+    /// This fallback implementation does not expose a socket error queue, so
+    /// the method is a no-op.
+    pub fn enable_transport_errors(&self, _socket: UdpSockRef<'_>) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Receives one pending asynchronous transport-layer error from this socket.
+    ///
+    /// This fallback implementation does not expose a socket error queue, so
+    /// this always returns `None`.
+    pub fn recv_transport_error(
+        &self,
+        _socket: UdpSockRef<'_>,
+    ) -> io::Result<Option<TransportError>> {
+        Ok(None)
     }
 
     #[inline]

@@ -18,7 +18,6 @@ use crate::{
     Dir, Duration, EndpointConfig, Frame, INITIAL_MTU, Instant, MAX_CID_SIZE, MAX_STREAM_COUNT,
     MIN_INITIAL_SIZE, Side, StreamId, TIMER_GRANULARITY, TokenStore, Transmit, TransportError,
     TransportErrorCode, VarInt,
-    cid_generator::ConnectionIdGenerator,
     cid_queue::CidQueue,
     coding::BufMutExt,
     config::{ServerConfig, TransportConfig},
@@ -252,7 +251,8 @@ impl Connection {
         remote: SocketAddr,
         local_ip: Option<IpAddr>,
         crypto: Box<dyn crypto::Session>,
-        cid_gen: &dyn ConnectionIdGenerator,
+        local_cid_len: usize,
+        local_cid_lifetime: Option<Duration>,
         now: Instant,
         version: u32,
         allow_mtud: bool,
@@ -279,8 +279,8 @@ impl Connection {
             handshake_cid: loc_cid,
             rem_handshake_cid: rem_cid,
             local_cid_state: CidState::new(
-                cid_gen.cid_len(),
-                cid_gen.cid_lifetime(),
+                local_cid_len,
+                local_cid_lifetime,
                 now,
                 if pref_addr_cid.is_some() { 2 } else { 1 },
             ),
@@ -605,7 +605,7 @@ impl Connection {
                     debug_assert!(untracked_bytes <= segment_size as u64);
 
                     let bytes_to_send = segment_size as u64 + untracked_bytes;
-                    if self.path.in_flight.bytes + bytes_to_send >= self.path.congestion.window() {
+                    if self.path.in_flight.bytes + bytes_to_send > self.path.congestion.window() {
                         space_idx += 1;
                         congestion_blocked = true;
                         // We continue instead of breaking here in order to avoid
@@ -1201,6 +1201,7 @@ impl Connection {
                     if let Some((_, prev)) = self.prev_path.take() {
                         self.path = prev;
                         self.set_loss_detection_timer(now);
+                        self.events.push_back(Event::PathUpdated);
                     }
                     self.path.challenge = None;
                     self.path.challenge_pending = false;
@@ -2956,22 +2957,7 @@ impl Connection {
                     match self.rem_cids.insert(frame) {
                         Ok(None) => {}
                         Ok(Some((retired, reset_token))) => {
-                            let pending_retired =
-                                &mut self.spaces[SpaceId::Data].pending.retire_cids;
-                            /// Ensure `pending_retired` cannot grow without bound. Limit is
-                            /// somewhat arbitrary but very permissive.
-                            const MAX_PENDING_RETIRED_CIDS: u64 = CidQueue::LEN as u64 * 10;
-                            // We don't bother counting in-flight frames because those are bounded
-                            // by congestion control.
-                            if (pending_retired.len() as u64)
-                                .saturating_add(retired.end.saturating_sub(retired.start))
-                                > MAX_PENDING_RETIRED_CIDS
-                            {
-                                return Err(TransportError::CONNECTION_ID_LIMIT_ERROR(
-                                    "queued too many retired CIDs",
-                                ));
-                            }
-                            pending_retired.extend(retired);
+                            self.spaces[SpaceId::Data].pending.retire_cids(retired)?;
                             self.set_reset_token(reset_token);
                         }
                         Err(InsertError::ExceedsLimit) => {
@@ -2984,8 +2970,7 @@ impl Connection {
                             // was retired all at once via retire_prior_to.
                             self.spaces[SpaceId::Data]
                                 .pending
-                                .retire_cids
-                                .push(frame.sequence);
+                                .retire_cids(frame.sequence..frame.sequence.saturating_add(1))?;
                             continue;
                         }
                     };
@@ -3129,6 +3114,8 @@ impl Connection {
         let prev_pto = self.pto(SpaceId::Data);
 
         let mut prev = mem::replace(&mut self.path, new_path);
+        self.events.push_back(Event::PathUpdated);
+
         // Don't clobber the original path if the previous one hasn't been validated yet
         if prev.challenge.is_none() {
             prev.challenge = Some(self.rng.random());
@@ -3726,11 +3713,7 @@ impl Connection {
                 .as_ref()
                 .is_some_and(|(_, x)| x.challenge_pending)
             || !self.path_responses.is_empty()
-            || self
-                .datagrams
-                .outgoing
-                .front()
-                .is_some_and(|x| x.size(true) <= max_size)
+            || self.datagrams.outgoing.can_send_1rtt(max_size)
     }
 
     /// Update counters to account for a packet becoming acknowledged, lost, or abandoned
@@ -4032,6 +4015,7 @@ mod state {
 
 /// Events of interest to the application
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Event {
     /// The connection's handshake data is ready
     HandshakeDataReady,
@@ -4055,6 +4039,8 @@ pub enum Event {
     DatagramReceived,
     /// One or more application datagrams have been sent after blocking
     DatagramsUnblocked,
+    /// The currently active path was updated
+    PathUpdated,
 }
 
 fn get_max_ack_delay(params: &TransportParameters) -> Duration {

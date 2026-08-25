@@ -519,6 +519,39 @@ fn congestion() {
 }
 
 #[test]
+fn full_initial_window() {
+    let _guard = subscribe();
+
+    // Keep `current_mtu` pinned to `INITIAL_MTU`, which the default initial window of 12000 bytes
+    // is an exact multiple of, so that the window can be filled precisely.
+    let mut transport = TransportConfig::default();
+    transport.mtu_discovery_config(None);
+    let mut config = client_config();
+    config.transport = Arc::new(transport);
+
+    let mut pair = Pair::default();
+    let (client_ch, _) = pair.connect_with(config);
+    assert_eq!(pair.client_conn_mut(client_ch).bytes_in_flight(), 0);
+    let window = pair.client_conn_mut(client_ch).congestion_window();
+    let mtu = u64::from(INITIAL_MTU);
+    assert_eq!(window % mtu, 0, "window must be exactly fillable");
+
+    let s = pair.client_streams(client_ch).open(Dir::Uni).unwrap();
+    let data = vec![42; 2 * window as usize];
+    assert_eq!(
+        pair.client_send(client_ch, s).write(&data),
+        Ok(data.len()),
+        "the test must be limited by congestion control, not by flow control"
+    );
+
+    let span = tracing::info_span!("client");
+    let _guard = span.enter();
+    pair.client.drive(pair.time, pair.server.addr);
+    assert_eq!(pair.client_conn_mut(client_ch).bytes_in_flight(), window);
+    assert_eq!(pair.client.outbound.len() as u64, window / mtu);
+}
+
+#[test]
 fn high_latency_handshake() {
     let _guard = subscribe();
     let mut pair = Pair::default();
@@ -799,6 +832,131 @@ fn zero_rtt_incoming_buffer_size_total() {
     test_zero_rtt_incoming_limit(|config| {
         config.incoming_buffer_size_total(4000);
     });
+}
+
+/// Verify that datagrams arriving while a connection is in the `Accepting` state (between
+/// `start_accept` and `finish_accept`) are buffered in `incoming_buffers` and replayed into the
+/// connection after `finish_accept`. Drives through the full handshake and clean shutdown to
+/// confirm no endpoint state is leaked.
+#[test]
+fn accepting_state_buffers_retransmitted_initials() {
+    let _guard = subscribe();
+    let mut pair = Pair::default();
+    pair.server.handle_incoming = Box::new(|_| IncomingConnectionBehavior::Wait);
+
+    let client_ch = pair.begin_connect(client_config());
+    pair.drive_client();
+    pair.drive_server();
+
+    let incoming = pair.server.pop_waiting_incoming();
+
+    let accepting = pair.server.start_split_accept(incoming, pair.time);
+    assert_eq!(pair.server.incoming_buffer_bytes(), 0);
+    assert_eq!(pair.server.open_connections(), 0);
+    assert_eq!(pair.server.pending_accepts(), 1);
+
+    // Removing the server configuration only prevents new attempts; it does not close the
+    // endpoint. An accept that already captured its configuration must keep buffering.
+    pair.server.disable_new_connections();
+
+    // With no server response, the client's next wakeup is its loss timer. Advancing to it and
+    // driving the client emits a retransmitted Initial for the same connection attempt.
+    pair.time = pair.client.next_wakeup().unwrap();
+    pair.drive_client();
+    assert!(!pair.server.inbound.is_empty());
+    pair.drive_server();
+
+    assert!(pair.server.waiting_incoming.is_empty());
+    assert!(pair.server.incoming_buffer_bytes() > 0);
+
+    let server_ch = pair.server.finish_split_accept(accepting);
+    assert_eq!(pair.server.incoming_buffer_bytes(), 0);
+    assert_eq!(pair.server.open_connections(), 1);
+    assert_eq!(pair.server.pending_accepts(), 0);
+
+    pair.drive();
+    pair.finish_connect(client_ch, server_ch);
+
+    pair.client
+        .connections
+        .get_mut(&client_ch)
+        .unwrap()
+        .close(pair.time, VarInt(42), Bytes::new());
+    pair.drive();
+    assert_eq!(pair.client.known_connections(), 0);
+    assert_eq!(pair.client.known_cids(), 0);
+    assert_eq!(pair.server.known_connections(), 0);
+    assert_eq!(pair.server.known_cids(), 0);
+}
+
+/// Verify that attempts in the `Accepting` state count toward `max_incoming`, so a second
+/// connection attempt is refused while the first attempt is still between `start_accept`
+/// and `finish_accept`.
+#[test]
+fn max_incoming_counts_accepts_in_progress() {
+    let _guard = subscribe();
+    let mut server_config = server_config();
+    server_config.max_incoming(1);
+    let mut pair = Pair::new(Arc::new(EndpointConfig::default()), server_config);
+    pair.server.handle_incoming = Box::new(|_| IncomingConnectionBehavior::Wait);
+
+    let _client_ch = pair.begin_connect(client_config());
+    pair.drive_client();
+    pair.drive_server();
+
+    let incoming = pair.server.pop_waiting_incoming();
+
+    let accepting = pair.server.start_split_accept(incoming, pair.time);
+    assert_eq!(pair.server.open_connections(), 0);
+    assert_eq!(pair.server.pending_accepts(), 1);
+
+    let _refused_ch = pair.begin_connect(client_config());
+    pair.drive_client();
+    pair.drive_server();
+    assert!(pair.server.waiting_incoming.is_empty());
+    assert_eq!(pair.server.open_connections(), 0);
+    assert_eq!(pair.server.pending_accepts(), 1);
+
+    pair.server.finish_split_accept(accepting);
+    assert_eq!(pair.server.open_connections(), 1);
+    assert_eq!(pair.server.pending_accepts(), 0);
+}
+
+/// Verify that when the off-lock handshake fails (here via ALPN mismatch) after `start_accept`
+/// has reserved endpoint state, `finish_accept_error` releases the pending-accept slot and the
+/// reserved CIDs/buffer, leaving no endpoint state behind.
+#[test]
+fn accepting_state_cleaned_up_on_handshake_failure() {
+    let _guard = subscribe();
+    let server_config =
+        ServerConfig::with_crypto(Arc::new(server_crypto_with_alpn(vec!["foo".into()])));
+    let mut pair = Pair::new(Arc::new(EndpointConfig::default()), server_config);
+    pair.server.handle_incoming = Box::new(|_| IncomingConnectionBehavior::Wait);
+
+    let _client_ch =
+        pair.begin_connect(ClientConfig::new(Arc::new(client_crypto_with_alpn(vec![
+            "bar".into(),
+        ]))));
+    pair.drive_client();
+    pair.drive_server();
+
+    let incoming = pair.server.pop_waiting_incoming();
+    let accepting = pair.server.start_split_accept(incoming, pair.time);
+    assert_eq!(pair.server.pending_accepts(), 1);
+
+    // The TLS handshake runs in finish_without_endpoint and fails on the ALPN mismatch.
+    let cause = pair.server.finish_split_accept_error(accepting);
+    assert_matches!(
+        cause,
+        ConnectionError::TransportError(ref e) if e.code == TransportErrorCode::crypto(0x78)
+    );
+
+    // The failed accept must leave no reserved endpoint state behind.
+    assert_eq!(pair.server.pending_accepts(), 0);
+    assert_eq!(pair.server.open_connections(), 0);
+    assert_eq!(pair.server.incoming_buffer_bytes(), 0);
+    assert_eq!(pair.server.known_connections(), 0);
+    assert_eq!(pair.server.known_cids(), 0);
 }
 
 #[test]
@@ -1996,9 +2154,12 @@ fn datagram_send_recv() {
 #[test]
 fn datagram_recv_buffer_overflow() {
     let _guard = subscribe();
-    const WINDOW: usize = 100;
+    const PAYLOAD_WINDOW: usize = 100;
+    const METADATA_WINDOW: usize = 2 * size_of::<Datagram>();
+    const WINDOW: usize = PAYLOAD_WINDOW + METADATA_WINDOW;
     let server = ServerConfig {
         transport: Arc::new(TransportConfig {
+            // Account for exactly two datagrams of metadata space
             datagram_receive_buffer_size: Some(WINDOW),
             ..TransportConfig::default()
         }),
@@ -2012,9 +2173,9 @@ fn datagram_recv_buffer_overflow() {
         Some(WINDOW - Datagram::SIZE_BOUND)
     );
 
-    const DATA1: &[u8] = &[0xAB; (WINDOW / 3) + 1];
-    const DATA2: &[u8] = &[0xBC; (WINDOW / 3) + 1];
-    const DATA3: &[u8] = &[0xCD; (WINDOW / 3) + 1];
+    const DATA1: &[u8] = &[0xAB; (PAYLOAD_WINDOW / 3) + 1];
+    const DATA2: &[u8] = &[0xBC; (PAYLOAD_WINDOW / 3) + 1];
+    const DATA3: &[u8] = &[0xCD; (PAYLOAD_WINDOW / 3) + 1];
     pair.client_datagrams(client_ch)
         .send(DATA1.into(), true)
         .unwrap();
@@ -3562,7 +3723,7 @@ fn oversized_datagrams_trigger_unblock() {
 
     assert_eq!(
         pair.client_datagrams(client_ch).send_buffer_space(),
-        send_buffer_size,
+        send_buffer_size - size_of::<Datagram>(),
         "expected the send buffer to be empty after too large datagrams were dropped",
     );
     match pair.client_conn_mut(client_ch).poll() {
