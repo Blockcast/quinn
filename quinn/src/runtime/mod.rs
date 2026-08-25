@@ -222,7 +222,7 @@ fn log_sendmsg_error(
 ) {
     #[cfg(unix)]
     // Unix `EMSGSIZE` is expected for MTU probes.
-    if udp::is_msg_size_err(error) {
+    if is_msg_size_err(error) {
         return;
     }
 
