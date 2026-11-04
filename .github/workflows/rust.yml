@@ -123,6 +123,13 @@ jobs:
     runs-on:
       group: default-tools
       labels: arc-light
+    # arc-light pods request 0.5 CPU with no limit, so libtest sizes its pool to the node (up to 24
+    # threads on k8s-tools-w3) while the pod gets about one CPU. quinn's timing tests then overrun:
+    # `stream_stopped` allows a handshake plus a stream round trip 100 ms, and `handshake_timeout`
+    # needs a 500 ms idle timer to fire before 1 s. Pinned to one CPU with 24 test threads,
+    # `stream_stopped` failed 6 of 6 runs; with one test thread it failed 0 of 6.
+    env:
+      RUST_TEST_THREADS: 1
 
     steps:
       - uses: actions/checkout@v7
@@ -142,6 +149,9 @@ jobs:
     runs-on:
       group: default-tools
       labels: arc-light
+    # One test thread, for the reason given on the `test` job.
+    env:
+      RUST_TEST_THREADS: 1
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
