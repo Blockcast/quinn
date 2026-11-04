@@ -312,9 +312,13 @@ jobs:
       labels: arc-light
     env:
       RUSTFLAGS: -Dwarnings
-      SKIP_FEATURES: ''
+      # arc-light gives a runner a 4 GiB `work` volume. The upstream depth-3 powerset is 1,346 checks
+      # with FIPS. On 11-04 it filled that volume and the runner was evicted after about 100 minutes.
+      # Depth 2 without the FIPS features is 238 checks: about 1.4 GiB of target/ at peak and 19 minutes
+      # on a 32-core host. FIPS still builds in `msrv` (`cargo check --all-features`).
+      SKIP_FEATURES: 'aws-lc-rs-fips,rustls-aws-lc-rs-fips'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
-      - run: cargo hack check --feature-powerset --depth 3 --optional-deps --no-dev-deps --ignore-private --skip "${{env.SKIP_FEATURES}}"
+      - run: cargo hack check --feature-powerset --depth 2 --optional-deps --no-dev-deps --ignore-private --skip "${{env.SKIP_FEATURES}}"
