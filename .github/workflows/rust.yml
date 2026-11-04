@@ -17,7 +17,9 @@ jobs:
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/FreeBSD VM capability. Keep this
+    # lane explicit and skipped rather than falling back to a hosted runner.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -44,7 +46,8 @@ jobs:
 
   test-solaris:
     name: test on solaris
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/Solaris VM capability.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -72,7 +75,8 @@ jobs:
 
   test-illumos:
     name: test on illumos
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/Illumos VM capability.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -226,13 +230,15 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
-      labels: arc-light
+      labels: arc-dind
     steps:
     - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
 
   test-android:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The available ARC DinD pool does not expose /dev/kvm or udev for the
+    # Android emulator. Do not route this lane to a hosted runner.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
