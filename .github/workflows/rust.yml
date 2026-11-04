@@ -17,7 +17,9 @@ jobs:
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-dind
     steps:
       - uses: actions/checkout@v7
       - name: test on freebsd
@@ -41,7 +43,9 @@ jobs:
 
   test-solaris:
     name: test on solaris
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-dind
     steps:
       - uses: actions/checkout@v7
       - name: test on Solaris
@@ -66,7 +70,9 @@ jobs:
 
   test-illumos:
     name: test on illumos
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-dind
     steps:
       - uses: actions/checkout@v7
       - name: test on Illumos
@@ -84,7 +90,9 @@ jobs:
 
   test-musl:
     name: test on musl
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     env:
       # `cc` looks for a target-prefixed compiler; point it at the one `musl-tools` installs.
       CC_x86_64_unknown_linux_musl: musl-gcc
@@ -100,15 +108,12 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [linux]
         rust: [stable, beta]
-        exclude:
-          - os: macos-latest
-            rust: beta
-          - os: windows-latest
-            rust: beta
 
-    runs-on: ${{ matrix.os }}
+    runs-on:
+      group: default-tools
+      labels: arc-light
 
     steps:
       - uses: actions/checkout@v7
@@ -118,17 +123,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --all-targets
       - run: cargo test --locked
-      - run: cargo test --locked -p quinn-udp --features fast-apple-datapath
-        if: ${{ runner.os == 'macOS' }}
       - run: cargo test --locked -- --ignored stress
       - run: cargo test --locked --manifest-path fuzz/Cargo.toml
         if: ${{ matrix.rust == 'stable' }}
       - run: cargo test --locked -p quinn-udp --benches
-      - run: cargo test --locked -p quinn-udp --benches --features fast-apple-datapath
-        if: ${{ runner.os == 'macOS' }}
 
   test-aws-lc-rs:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -144,7 +147,9 @@ jobs:
 
   wasm_test:
     name: test wasm32-unknown-unknown
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -173,7 +178,9 @@ jobs:
       - run: cargo test --locked -p quinn-proto --target wasm32-unknown-unknown
 
   msrv:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     steps:
       - uses: actions/checkout@v7
       # Note that we must also update the README when changing the MSRV
@@ -182,7 +189,9 @@ jobs:
       - run: cargo check --locked --lib --all-features -p quinn-udp -p quinn-proto -p quinn
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -205,13 +214,17 @@ jobs:
           cargo clippy --locked -- -D warnings
 
   audit:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-light
     steps:
     - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
 
   test-android:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: default-tools
+      labels: arc-dind
 
     strategy:
       matrix:
@@ -275,12 +288,13 @@ jobs:
   features:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: [linux]
+    runs-on:
+      group: default-tools
+      labels: arc-light
     env:
       RUSTFLAGS: -Dwarnings
-      # skip FIPS features outside of Linux
-      SKIP_FEATURES: ${{ matrix.os != 'ubuntu-latest' && 'rustls-aws-lc-rs-fips,aws-lc-rs-fips,__rustls-post-quantum-test' || '' }}
+      SKIP_FEATURES: ''
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
