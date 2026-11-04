@@ -9,7 +9,7 @@ jobs:
   deploy:
     runs-on:
       group: default-tools
-      labels: arc-deploy
+      labels: arc-light
     steps:
       - uses: actions/checkout@v7
       - name: Setup mdBook
