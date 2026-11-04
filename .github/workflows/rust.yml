@@ -17,6 +17,7 @@ jobs:
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -43,6 +44,7 @@ jobs:
 
   test-solaris:
     name: test on solaris
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -70,6 +72,7 @@ jobs:
 
   test-illumos:
     name: test on illumos
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -90,6 +93,7 @@ jobs:
 
   test-musl:
     name: test on musl
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -106,6 +110,7 @@ jobs:
       - run: cargo test --locked -p quinn-udp --target x86_64-unknown-linux-musl
 
   test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       matrix:
         os: [linux]
@@ -129,6 +134,7 @@ jobs:
       - run: cargo test --locked -p quinn-udp --benches
 
   test-aws-lc-rs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -147,6 +153,7 @@ jobs:
 
   wasm_test:
     name: test wasm32-unknown-unknown
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -178,6 +185,7 @@ jobs:
       - run: cargo test --locked -p quinn-proto --target wasm32-unknown-unknown
 
   msrv:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -189,6 +197,7 @@ jobs:
       - run: cargo check --locked --lib --all-features -p quinn-udp -p quinn-proto -p quinn
 
   lint:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -214,6 +223,7 @@ jobs:
           cargo clippy --locked -- -D warnings
 
   audit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-light
@@ -222,6 +232,7 @@ jobs:
     - uses: EmbarkStudios/cargo-deny-action@v2
 
   test-android:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -286,6 +297,7 @@ jobs:
         script: .github/workflows/rust-android-run-tests-on-emulator.sh
 
   features:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       matrix:
         os: [linux]
