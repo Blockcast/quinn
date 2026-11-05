@@ -17,7 +17,9 @@ jobs:
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/FreeBSD VM capability. Keep this
+    # lane explicit and skipped rather than falling back to a hosted runner.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -44,7 +46,8 @@ jobs:
 
   test-solaris:
     name: test on solaris
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/Solaris VM capability.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -72,7 +75,8 @@ jobs:
 
   test-illumos:
     name: test on illumos
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The ARC DinD pool has no nested KVM/Illumos VM capability.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -119,6 +123,13 @@ jobs:
     runs-on:
       group: default-tools
       labels: arc-light
+    # arc-light pods request 0.5 CPU with no limit, so libtest sizes its pool to the node (up to 24
+    # threads on k8s-tools-w3) while the pod gets about one CPU. quinn's timing tests then overrun:
+    # `stream_stopped` allows a handshake plus a stream round trip 100 ms, and `handshake_timeout`
+    # needs a 500 ms idle timer to fire before 1 s. Pinned to one CPU with 24 test threads,
+    # `stream_stopped` failed 6 of 6 runs; with one test thread it failed 0 of 6.
+    env:
+      RUST_TEST_THREADS: 1
 
     steps:
       - uses: actions/checkout@v7
@@ -138,6 +149,9 @@ jobs:
     runs-on:
       group: default-tools
       labels: arc-light
+    # One test thread, for the reason given on the `test` job.
+    env:
+      RUST_TEST_THREADS: 1
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -226,13 +240,15 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
-      labels: arc-light
+      labels: arc-dind
     steps:
     - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
 
   test-android:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The available ARC DinD pool does not expose /dev/kvm or udev for the
+    # Android emulator. Do not route this lane to a hosted runner.
+    if: ${{ false }}
     runs-on:
       group: default-tools
       labels: arc-dind
@@ -306,9 +322,13 @@ jobs:
       labels: arc-light
     env:
       RUSTFLAGS: -Dwarnings
-      SKIP_FEATURES: ''
+      # arc-light gives a runner a 4 GiB `work` volume. The upstream depth-3 powerset is 1,346 checks
+      # with FIPS. On 11-04 it filled that volume and the runner was evicted after about 100 minutes.
+      # Depth 2 without the FIPS features is 238 checks: about 1.4 GiB of target/ at peak and 19 minutes
+      # on a 32-core host. FIPS still builds in `msrv` (`cargo check --all-features`).
+      SKIP_FEATURES: 'aws-lc-rs-fips,rustls-aws-lc-rs-fips'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
-      - run: cargo hack check --feature-powerset --depth 3 --optional-deps --no-dev-deps --ignore-private --skip "${{env.SKIP_FEATURES}}"
+      - run: cargo hack check --feature-powerset --depth 2 --optional-deps --no-dev-deps --ignore-private --skip "${{env.SKIP_FEATURES}}"
