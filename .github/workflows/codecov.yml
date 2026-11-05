@@ -6,6 +6,7 @@ on:
 
 jobs:
   coverage:
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [linux]
