@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   test-freebsd:
+    timeout-minutes: 220
   # see https://github.com/actions/runner/issues/385
   # use https://github.com/vmactions/freebsd-vm for now
     name: test on freebsd
@@ -45,6 +46,7 @@ jobs:
             cargo build --locked --all-targets && cargo test --locked && cargo test --locked -- --ignored stress && cargo test --locked --manifest-path fuzz/Cargo.toml && cargo test --locked -p quinn-udp --benches
 
   test-solaris:
+    timeout-minutes: 220
     name: test on solaris
     # The ARC DinD pool has no nested KVM/Solaris VM capability.
     if: ${{ false }}
@@ -74,6 +76,7 @@ jobs:
             cargo build --locked --all-targets && cargo test --locked --manifest-path fuzz/Cargo.toml && cargo test --locked -p quinn-udp --benches
 
   test-illumos:
+    timeout-minutes: 220
     name: test on illumos
     # The ARC DinD pool has no nested KVM/Illumos VM capability.
     if: ${{ false }}
@@ -96,6 +99,7 @@ jobs:
             cargo build --locked --all-targets && cargo test --locked && cargo test --locked -- --ignored stress && cargo test --locked --manifest-path fuzz/Cargo.toml && cargo test --locked -p quinn-udp --benches
 
   test-musl:
+    timeout-minutes: 220
     name: test on musl
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
@@ -114,6 +118,7 @@ jobs:
       - run: cargo test --locked -p quinn-udp --target x86_64-unknown-linux-musl
 
   test:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       matrix:
@@ -145,6 +150,7 @@ jobs:
       - run: cargo test --locked -p quinn-udp --benches
 
   test-aws-lc-rs:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
@@ -166,6 +172,7 @@ jobs:
       - run: RUST_BACKTRACE=1 cargo test --locked --manifest-path quinn/Cargo.toml --no-default-features --features rustls-aws-lc-rs-fips,__rustls-post-quantum-test,runtime-tokio
 
   wasm_test:
+    timeout-minutes: 220
     name: test wasm32-unknown-unknown
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
@@ -199,6 +206,7 @@ jobs:
       - run: cargo test --locked -p quinn-proto --target wasm32-unknown-unknown
 
   msrv:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
@@ -211,6 +219,7 @@ jobs:
       - run: cargo check --locked --lib --all-features -p quinn-udp -p quinn-proto -p quinn
 
   lint:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
@@ -237,6 +246,7 @@ jobs:
           cargo clippy --locked -- -D warnings
 
   audit:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       group: default-tools
@@ -246,6 +256,7 @@ jobs:
     - uses: EmbarkStudios/cargo-deny-action@v2
 
   test-android:
+    timeout-minutes: 220
     # The available ARC DinD pool does not expose /dev/kvm or udev for the
     # Android emulator. Do not route this lane to a hosted runner.
     if: ${{ false }}
@@ -313,6 +324,7 @@ jobs:
         script: .github/workflows/rust-android-run-tests-on-emulator.sh
 
   features:
+    timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       matrix:
