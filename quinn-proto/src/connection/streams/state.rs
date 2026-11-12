@@ -1474,6 +1474,62 @@ mod tests {
     }
 
     #[test]
+    fn set_priority_now_requeues_queued_data() {
+        // `set_priority` reaches a stream with queued data only at its next
+        // send turn; `set_priority_now` moves the queued data at once, in both
+        // directions.
+        for (from, to) in [(1, -1), (-1, 1)] {
+            let mut server = make(Side::Server);
+            server.set_params(&TransportParameters {
+                initial_max_streams_bidi: 3u32.into(),
+                initial_max_data: 1000u32.into(),
+                initial_max_stream_data_bidi_remote: 1000u32.into(),
+                ..TransportParameters::default()
+            });
+            let (mut pending, state) = (Retransmits::default(), ConnState::Established);
+            let mut streams = Streams {
+                state: &mut server,
+                conn_state: &state,
+            };
+            let id_moved = streams.open(Dir::Bi).unwrap();
+            let id_mid = streams.open(Dir::Bi).unwrap();
+
+            let mut mid = SendStream {
+                id: id_mid,
+                state: &mut server,
+                pending: &mut pending,
+                conn_state: &state,
+            };
+            mid.write(&[0; 200]).unwrap();
+            let mut moved = SendStream {
+                id: id_moved,
+                state: &mut server,
+                pending: &mut pending,
+                conn_state: &state,
+            };
+            moved.set_priority(from).unwrap();
+            moved.write(&[0; 200]).unwrap();
+            assert_eq!(server.pending.len(), 2);
+
+            let mut moved = SendStream {
+                id: id_moved,
+                state: &mut server,
+                pending: &mut pending,
+                conn_state: &state,
+            };
+            moved.set_priority_now(to).unwrap();
+            assert_eq!(moved.priority().unwrap(), to);
+            // Still one queue entry per stream.
+            assert_eq!(server.pending.len(), 2);
+
+            let mut buf = Vec::with_capacity(1000);
+            let meta = server.write_stream_frames(&mut buf, 40, true);
+            assert_eq!(meta.len(), 1);
+            assert_eq!(meta[0].id, if to > 0 { id_moved } else { id_mid });
+        }
+    }
+
+    #[test]
     fn same_stream_priority() {
         for fair in [true, false] {
             let mut server = make(Side::Server);

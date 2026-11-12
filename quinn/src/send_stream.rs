@@ -227,6 +227,20 @@ impl SendStream {
         Ok(())
     }
 
+    /// Set the priority of the send stream, effective for its buffered data too
+    ///
+    /// [`set_priority`](Self::set_priority) reaches data already buffered only after that data
+    /// has been transmitted, so a stream raised above a continuously busy stream can wait behind
+    /// it at its old priority. This also moves the buffered data to the new priority at once,
+    /// behind other streams already buffered at that priority.
+    pub fn set_priority_now(&self, priority: i32) -> Result<(), ClosedStream> {
+        let mut conn = self.conn.state.lock("SendStream::set_priority_now");
+        conn.inner
+            .send_stream(self.stream)
+            .set_priority_now(priority)?;
+        Ok(())
+    }
+
     /// Get the priority of the send stream
     pub fn priority(&self) -> Result<i32, ClosedStream> {
         let mut conn = self.conn.state.lock("SendStream::priority");

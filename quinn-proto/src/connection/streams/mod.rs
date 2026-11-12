@@ -352,6 +352,22 @@ impl<'a> SendStream<'a> {
         Ok(())
     }
 
+    /// Set the priority of a stream, effective for its queued data too
+    ///
+    /// # Panics
+    /// - when applied to a receive stream
+    ///
+    /// [`set_priority`](Self::set_priority) reaches data already queued only at
+    /// the stream's next send turn, so a stream raised above a continuously
+    /// busy stream can wait behind it at its old priority until that one runs
+    /// dry. This also moves the stream's queue entry, behind the streams
+    /// already queued at the new priority.
+    pub fn set_priority_now(&mut self, priority: i32) -> Result<(), ClosedStream> {
+        self.set_priority(priority)?;
+        self.state.pending.requeue(self.id, priority);
+        Ok(())
+    }
+
     /// Get the priority of a stream
     ///
     /// # Panics
@@ -414,6 +430,22 @@ impl PendingStreamsQueue {
             recency: self.recency,
             id,
         });
+    }
+
+    /// Move a queued stream to `priority`, behind the streams already queued there.
+    /// A stream that is not queued is left alone.
+    fn requeue(&mut self, id: StreamId, priority: i32) {
+        if let Some(next) = self.next.as_mut().filter(|next| next.id == id) {
+            // Fairness is off and this stream is being completed: it keeps its
+            // turn and is pushed at its new priority once it yields.
+            next.priority = priority;
+            return;
+        }
+        let queued = self.streams.len();
+        self.streams.retain(|stream| stream.id != id);
+        if self.streams.len() != queued {
+            self.push_pending(id, priority);
+        }
     }
 
     fn pop(&mut self) -> Option<PendingStream> {
