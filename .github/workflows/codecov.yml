@@ -10,9 +10,7 @@ jobs:
     strategy:
       matrix:
         os: [linux]
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

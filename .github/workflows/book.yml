@@ -8,9 +8,7 @@ on:
 jobs:
   deploy:
     timeout-minutes: 15
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Setup mdBook

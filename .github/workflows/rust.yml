@@ -102,9 +102,7 @@ jobs:
     timeout-minutes: 220
     name: test on musl
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     env:
       # `cc` looks for a target-prefixed compiler; point it at the one `musl-tools` installs.
       CC_x86_64_unknown_linux_musl: musl-gcc
@@ -125,14 +123,10 @@ jobs:
         os: [linux]
         rust: [stable, beta]
 
-    runs-on:
-      group: default-tools
-      labels: arc-light
-    # arc-light pods request 0.5 CPU with no limit, so libtest sizes its pool to the node (up to 24
-    # threads on k8s-tools-w3) while the pod gets about one CPU. quinn's timing tests then overrun:
-    # `stream_stopped` allows a handshake plus a stream round trip 100 ms, and `handshake_timeout`
-    # needs a 500 ms idle timer to fire before 1 s. Pinned to one CPU with 24 test threads,
-    # `stream_stopped` failed 6 of 6 runs; with one test thread it failed 0 of 6.
+    runs-on: ubuntu-latest
+    # Keep one test thread for deterministic timing. The hosted runner avoids
+    # the single-CPU ARC pod contention that previously made these timer tests
+    # overrun (`stream_stopped` failed 6/6 runs with 24 test threads).
     env:
       RUST_TEST_THREADS: 1
 
@@ -152,9 +146,7 @@ jobs:
   test-aws-lc-rs:
     timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     # One test thread, for the reason given on the `test` job.
     env:
       RUST_TEST_THREADS: 1
@@ -175,9 +167,7 @@ jobs:
     timeout-minutes: 220
     name: test wasm32-unknown-unknown
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -208,9 +198,7 @@ jobs:
   msrv:
     timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Note that we must also update the README when changing the MSRV
@@ -221,9 +209,7 @@ jobs:
   lint:
     timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -248,9 +234,7 @@ jobs:
   audit:
     timeout-minutes: 220
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      group: default-tools
-      labels: arc-dind
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
@@ -329,15 +313,12 @@ jobs:
     strategy:
       matrix:
         os: [linux]
-    runs-on:
-      group: default-tools
-      labels: arc-light
+    runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -Dwarnings
-      # arc-light gives a runner a 4 GiB `work` volume. The upstream depth-3 powerset is 1,346 checks
-      # with FIPS. On 11-04 it filled that volume and the runner was evicted after about 100 minutes.
-      # Depth 2 without the FIPS features is 238 checks: about 1.4 GiB of target/ at peak and 19 minutes
-      # on a 32-core host. FIPS still builds in `msrv` (`cargo check --all-features`).
+      # Keep the feature powerset bounded: depth 2 is 238 checks and avoids the
+      # much larger FIPS matrix. FIPS still builds in `msrv` (`cargo check
+      # --all-features`).
       SKIP_FEATURES: 'aws-lc-rs-fips,rustls-aws-lc-rs-fips'
     steps:
       - uses: actions/checkout@v7
