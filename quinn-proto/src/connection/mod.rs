@@ -75,7 +75,7 @@ use spaces::Retransmits;
 use spaces::{PacketNumberFilter, PacketSpace, SendableFrames, SentPacket, ThinRetransmits};
 
 mod stats;
-pub use stats::{ConnectionStats, FrameStats, PathStats, UdpStats};
+pub use stats::{ConnectionStats, EcnStats, FrameStats, PathStats, UdpStats};
 
 mod streams;
 #[cfg(fuzzing)]
@@ -1265,6 +1265,18 @@ impl Connection {
         stats.path.rtt = self.path.rtt.get();
         stats.path.cwnd = self.path.congestion.window();
         stats.path.current_mtu = self.path.mtud.current_mtu();
+        stats.path.ecn_feedback = self
+            .spaces
+            .iter()
+            .fold(stats::EcnStats::default(), |total, space| {
+                total.saturating_add(stats::EcnStats::from_counts(space.ecn_feedback))
+            });
+        stats.path.ecn_received = self
+            .spaces
+            .iter()
+            .fold(stats::EcnStats::default(), |total, space| {
+                total.saturating_add(stats::EcnStats::from_counts(space.ecn_counters))
+            });
 
         stats
     }
@@ -4090,5 +4102,16 @@ mod tests {
             assert_eq!(negotiate_max_idle_timeout(left, right), result);
             assert_eq!(negotiate_max_idle_timeout(right, left), result);
         }
+    }
+
+    #[test]
+    fn ecn_stats_adds_each_codepoint_without_overflow() {
+        let left = stats::EcnStats { ect0: u64::MAX, ect1: 2, ce: 3 };
+        let right = stats::EcnStats { ect0: 1, ect1: 4, ce: 5 };
+        assert_eq!(left.saturating_add(right), stats::EcnStats {
+            ect0: u64::MAX,
+            ect1: 6,
+            ce: 8,
+        });
     }
 }
