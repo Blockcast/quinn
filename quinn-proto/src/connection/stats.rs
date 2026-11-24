@@ -2,6 +2,36 @@
 
 use crate::{Dir, Duration, frame::Frame};
 
+/// Explicit congestion notification counters reported by a peer in QUIC ACK_ECN frames.
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct EcnStats {
+    /// Packets marked ECT(0).
+    pub ect0: u64,
+    /// Packets marked ECT(1).
+    pub ect1: u64,
+    /// Packets marked CE.
+    pub ce: u64,
+}
+
+impl EcnStats {
+    pub(crate) fn from_counts(value: crate::frame::EcnCounts) -> Self {
+        Self {
+            ect0: value.ect0,
+            ect1: value.ect1,
+            ce: value.ce,
+        }
+    }
+
+    pub(crate) fn saturating_add(self, rhs: Self) -> Self {
+        Self {
+            ect0: self.ect0.saturating_add(rhs.ect0),
+            ect1: self.ect1.saturating_add(rhs.ect1),
+            ce: self.ce.saturating_add(rhs.ce),
+        }
+    }
+}
+
 /// Statistics about UDP datagrams transmitted or received on a connection
 ///
 /// All QUIC packets are carried by UDP datagrams. Hence, these statistics cover all traffic on a connection.
@@ -155,6 +185,10 @@ pub struct PathStats {
     pub black_holes_detected: u64,
     /// Largest UDP payload size the path currently supports
     pub current_mtu: u16,
+    /// ECN counters reported by the peer for packets sent on this path.
+    pub ecn_feedback: EcnStats,
+    /// ECN counters observed on packets received from the peer.
+    pub ecn_received: EcnStats,
 }
 
 /// Connection statistics
